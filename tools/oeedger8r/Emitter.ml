@@ -573,7 +573,7 @@ let oe_gen_ecall_function (fd : func_decl) =
      else "    /* There were no out nor in-out parameters. */")
   ; ""
   ; (* Check for null terminators in string parameters *)
-    "    /* Check that in/in-out strings are null terminated */"
+    "    /* Check that in/in-out strings are null terminated. */"
   ; (let params =
        List.map
          (fun (ptype, decl) ->
@@ -590,10 +590,11 @@ let oe_gen_ecall_function (fd : func_decl) =
      if params <> [] then String.concat "\n" params
      else "    /* There were no in nor in-out string parameters. */")
   ; ""
-  ; (* Call the enclave function *)
-    "    /* lfence after checks. */"
+  ; "    /* lfence after checks. */"
   ; "    oe_lfence();"
-  ; String.concat "\n    " (oe_gen_call_function fd)
+  ; ""
+  ; (* Call the enclave function *)
+    String.concat "\n    " (oe_gen_call_function fd)
   ; ""
   ; (* Mark call as success *)
     "    /* Success. */"
@@ -606,22 +607,22 @@ let oe_gen_ecall_function (fd : func_decl) =
   ; "}"
   ; "" ]
 
-let oe_gen_ecall_functions (os : out_channel) (ec : enclave_content) =
-  fprintf os "\n\n/****** ECALL function wrappers  *************/\n" ;
-  fprintf os "%s"
-    (String.concat "\n"
-       (List.flatten
-          (List.map (fun f -> oe_gen_ecall_function f.tf_fdecl) ec.tfunc_decls)))
+let oe_gen_ecall_functions (tfs : trusted_func list) =
+  if tfs <> [] then
+    List.flatten (List.map (fun f -> oe_gen_ecall_function f.tf_fdecl) tfs)
+  else ["/* There were no ecalls. */"]
 
-let oe_gen_ecall_table (os : out_channel) (ec : enclave_content) =
-  fprintf os "\n\n/****** ECALL function table  *************/\n" ;
-  fprintf os "oe_ecall_func_t __oe_ecalls_table[] = {\n" ;
-  List.iter
-    (fun f -> fprintf os "    (oe_ecall_func_t) ecall_%s,\n" f.tf_fdecl.fname)
-    ec.tfunc_decls ;
-  fprintf os "};\n\n" ;
-  fprintf os
-    "size_t __oe_ecalls_table_size = OE_COUNTOF(__oe_ecalls_table);\n\n"
+let oe_gen_ecall_table (tfs : trusted_func list) =
+  if tfs <> [] then
+    [ "oe_ecall_func_t __oe_ecalls_table[] = {"
+    ; String.concat ",\n"
+        (List.map
+           (fun f -> sprintf "    (oe_ecall_func_t)ecall_%s" f.tf_fdecl.fname)
+           tfs)
+    ; "};"
+    ; ""
+    ; "size_t __oe_ecalls_table_size = OE_COUNTOF(__oe_ecalls_table);" ]
+  else ["/* There were no ecalls. */"]
 
 let gen_fill_marshal_struct (fd : func_decl) (args : string) =
   (* Generate assignment argument to corresponding field in args *)
