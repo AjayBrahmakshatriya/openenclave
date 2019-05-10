@@ -13,7 +13,6 @@
 #include <openenclave/internal/report.h>
 #include <openenclave/internal/sgxtypes.h>
 #include <openenclave/internal/utils.h>
-
 OE_STATIC_ASSERT(OE_REPORT_DATA_SIZE == sizeof(sgx_report_data_t));
 
 OE_STATIC_ASSERT(sizeof(oe_identity_t) == 96);
@@ -168,7 +167,6 @@ static oe_result_t _oe_get_quote(
 
     if (args == NULL)
         OE_RAISE(OE_OUT_OF_MEMORY);
-
     OE_CHECK(oe_ocall(OE_OCALL_GET_QUOTE, (uint64_t)args, NULL));
     result = args->result;
 

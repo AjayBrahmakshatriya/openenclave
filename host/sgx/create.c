@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+#include <dlfcn.h>
 #include "../strings.h"
 
 #if defined(__linux__)
@@ -11,6 +12,7 @@
 
 #elif defined(_WIN32)
 #include <windows.h>
+
 
 static char* get_fullpath(const char* path)
 {
@@ -53,6 +55,8 @@ static char* get_fullpath(const char* path)
 #include "exception.h"
 #include "sgxload.h"
 
+#include <seccomp.h>
+#include <signal.h>
 static oe_once_type _enclave_init_once;
 
 static void _initialize_exception_handling(void)
@@ -613,6 +617,53 @@ done:
 **     - Obtains a launch token (EINITKEY) from the Intel(R) launch enclave (LE)
 **        for EINIT.
 */
+#define ADD_SECCOMP_RULE(ctx, ...)                      \
+        do {                                                  \
+                if(seccomp_rule_add(ctx, __VA_ARGS__) < 0) {        \
+                        fprintf(stderr, "Could not add seccomp rule");             \
+                        seccomp_release(ctx);                             \
+                        exit(-1);                                         \
+                }                                                   \
+        } while(0)
+static void sig_handler(int signum) {
+	fprintf(stderr, "Process tried to do an action it is not allowed with %d - KILLING\n", signum);
+	exit(-1);
+}
+static void insert_seccomp_filters(void) {
+	signal(SIGSYS, sig_handler);
+	
+	static scmp_filter_ctx ctx;
+	ctx = seccomp_init(SCMP_ACT_TRAP);
+	if(ctx == NULL) {
+		fprintf(stderr, "Could not open seccomp context");
+		exit(-1);
+	}	
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit      ), 0);
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit_group), 0);
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write     ), 0);
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read      ), 0);
+
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(brk       ), 0);
+
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap      ), 0);
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(munmap      ), 0);
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat     ), 0);
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(futex     ), 0);
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn     ), 0);
+
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close    ), 0);
+/*
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open     ), 0);
+	ADD_SECCOMP_RULE(ctx, SCMP_ACT_ALLOW, SCMP_SYS(lstat    ), 0);
+*/
+	if(seccomp_load(ctx) < 0) {
+		fprintf(stderr, "Could not load seccomp context\n");
+		exit(-1);
+	}
+
+}
+void cache_target_info(void);
+void create_report_provider(void);
 oe_result_t oe_create_enclave(
     const char* enclave_path,
     oe_enclave_type_t enclave_type,
@@ -623,6 +674,9 @@ oe_result_t oe_create_enclave(
     uint32_t ocall_table_size,
     oe_enclave_t** enclave_out)
 {
+    create_report_provider();
+    cache_target_info();
+
     oe_result_t result = OE_UNEXPECTED;
     oe_enclave_t* enclave = NULL;
     oe_sgx_load_context_t context;
@@ -691,6 +745,9 @@ oe_result_t oe_create_enclave(
      * ocalls. Therefore setup ocall table prior to initialization. */
     enclave->ocalls = (const oe_ocall_func_t*)ocall_table;
     enclave->num_ocalls = ocall_table_size;
+
+    dlopen("libdcap_quoteprov.so", RTLD_LAZY | RTLD_LOCAL);
+    insert_seccomp_filters();
 
     /* Invoke enclave initialization. */
     OE_CHECK(_initialize_enclave(enclave));

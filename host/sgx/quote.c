@@ -190,7 +190,6 @@ oe_result_t sgx_get_quote(
     size_t* quote_size)
 {
     oe_result_t result = OE_UNEXPECTED;
-
     /* Reject null parameters */
     if (!report || !quote_size)
         OE_RAISE(OE_INVALID_PARAMETER);

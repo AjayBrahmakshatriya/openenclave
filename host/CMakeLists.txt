@@ -108,6 +108,7 @@ add_library(oehost STATIC
   ${PLATFORM_SRC})
 
 target_link_libraries(oehost PUBLIC oe_includes)
+target_link_libraries(oehost INTERFACE -lseccomp)
 
 # TODO: Replace these with `find_package` and add as dependencies to
 # the CMake package.

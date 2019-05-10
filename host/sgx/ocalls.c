@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
-
+#include <errno.h>
 #include <assert.h>
 #include <stdio.h>
 
@@ -125,14 +125,73 @@ void HandleThreadWakeWait(oe_enclave_t* enclave, uint64_t arg_in)
 #endif
 }
 
+int report_fd_write;
+int report_fd_read;
+void create_report_provider(void);
+
+sgx_target_info_t cached_target_info = {{0}};
+
+void cache_target_info(void);
+void cache_target_info(void) {
+	sgx_get_qetarget_info(&cached_target_info);
+}
+void create_report_provider(void) {
+	//return;
+	int fd[2];
+	pipe(fd);
+	int fd2[2];
+	pipe(fd2);
+	if (fork()) {
+		close(fd[0]);
+		close(fd2[1]);
+		report_fd_write = fd[1];
+		report_fd_read = fd2[0];
+		return;
+	} else {
+		cache_target_info();
+		close(fd[1]);
+		close(fd2[0]);
+		sgx_report_t sgx_report;
+		size_t quote_size;
+		uint8_t *quote;
+		read(fd[0], &sgx_report, sizeof(sgx_report));
+		read(fd[0], &quote_size, sizeof(size_t));
+		quote = malloc(quote_size);
+		sgx_get_quote(&sgx_report, quote, &quote_size);
+		write(fd2[1], &quote_size, sizeof(quote_size));
+		read(fd[0], &sgx_report, sizeof(sgx_report));
+		read(fd[0], &quote_size, sizeof(size_t));
+		quote = malloc(quote_size);
+		sgx_get_quote(&sgx_report, quote, &quote_size);
+		write(fd2[1], &quote_size, sizeof(quote_size));
+		write(fd2[1], quote, quote_size);
+		exit(0);	
+	}
+	
+}
+
 void HandleGetQuote(uint64_t arg_in)
 {
     oe_get_quote_args_t* args = (oe_get_quote_args_t*)arg_in;
     if (!args)
         return;
-
+    
+#if 0
     args->result =
-        sgx_get_quote(&args->sgx_report, args->quote, &args->quote_size);
+       sgx_get_quote(&args->sgx_report, args->quote, &args->quote_size);
+#else 
+    write(report_fd_write, &args->sgx_report, sizeof(args->sgx_report));
+    write(report_fd_write, &args->quote_size, sizeof(size_t));
+
+    if (args->quote_size == 0) {
+	read(report_fd_read, &args->quote_size, sizeof(size_t));
+	args->result = OE_BUFFER_TOO_SMALL;
+    }else {
+	read(report_fd_read, &args->quote_size, sizeof(size_t));
+	read(report_fd_read, args->quote, args->quote_size);
+        args->result = 0;
+    }
+#endif
 }
 
 #ifdef OE_USE_LIBSGX
@@ -165,7 +224,9 @@ void HandleGetQETargetInfo(uint64_t arg_in)
     if (!args)
         return;
 
-    args->result = sgx_get_qetarget_info(&args->target_info);
+  //args->result = sgx_get_qetarget_info(&args->target_info);
+  memcpy(&args->target_info, &cached_target_info, sizeof(sgx_target_info_t));
+    
 }
 
 static char** _backtrace_symbols(

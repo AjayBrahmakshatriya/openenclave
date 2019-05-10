@@ -80,7 +80,7 @@ if(USE_LIBSGX)
     set(SGX_LIBS "-lsgx_enclave_common -lsgx_dcap_ql -lsgx_urts")
 endif()
 
-set(HOST_CLIBS "-rdynamic -L\${libdir}/openenclave/host -loehost -ldl -lpthread ${SGX_LIBS}")
+set(HOST_CLIBS "-rdynamic -L\${libdir}/openenclave/host -loehost -ldl -lpthread ${SGX_LIBS} -lseccomp")
 
 set(HOST_CXXLIBS "${HOST_CLIBS}")
 
